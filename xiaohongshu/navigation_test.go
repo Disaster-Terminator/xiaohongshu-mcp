@@ -22,7 +22,7 @@ func TestDocumentReadinessDoesNotWaitForPendingImagesOrReturnOldData(t *testing.
 			<-r.Context().Done()
 			return
 		}
-		fmt.Fprintf(w, `<html><body><img src="/pending"><script>
+		fmt.Fprintf(w, `<html><body><img src="/pending"><script defer src="/pending"></script><script>
 window.__INITIAL_STATE__={search:{feeds:{value:[%q]}}};
 </script></body></html>`, r.URL.Path)
 	}))
@@ -37,6 +37,7 @@ window.__INITIAL_STATE__={search:{feeds:{value:[%q]}}};
 	for _, path := range []string{"/old", "/new"} {
 		start := time.Now()
 		navigateDocument(page, server.URL+path)
+		page.MustWait(`() => Array.isArray(window.__INITIAL_STATE__?.search?.feeds?.value)`)
 		got := page.MustEval(`() => window.__INITIAL_STATE__.search.feeds.value[0]`).String()
 		if got != path {
 			t.Fatalf("returned stale data: got %q, want %q", got, path)
