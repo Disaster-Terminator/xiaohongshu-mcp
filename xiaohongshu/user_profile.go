@@ -54,15 +54,14 @@ func (u *UserProfileAction) UserProfile(ctx context.Context, userID, xsecToken s
 	page := u.page.Context(ctx).Timeout(60 * time.Second) // 重设被 .Context 清掉的 deadline
 
 	searchURL := makeUserProfileURL(userID, xsecToken, tab)
-	page.MustNavigate(searchURL)
-	page.MustWaitStable()
+	navigateDocument(page, searchURL)
 
 	return u.extractUserProfileData(page, tab)
 }
 
 // extractUserProfileData 从页面中提取用户资料数据的通用方法
 func (u *UserProfileAction) extractUserProfileData(page *rod.Page, tab ProfileTab) (*UserProfileResponse, error) {
-	page.MustWait(`() => window.__INITIAL_STATE__ !== undefined`)
+	waitProfileData(page)
 
 	userDataResult := page.MustEval(`() => {
 		if (window.__INITIAL_STATE__ &&
@@ -157,7 +156,7 @@ func (u *UserProfileAction) GetMyProfileViaSidebar(ctx context.Context, tab Prof
 	}
 
 	// 等待页面加载完成并获取 __INITIAL_STATE__
-	page.MustWaitStable()
+	waitProfileData(page)
 
 	if err := u.selectTab(ctx, page, tab); err != nil {
 		return nil, err
@@ -188,8 +187,23 @@ func (u *UserProfileAction) selectTab(ctx context.Context, page *rod.Page, tab P
 			return fmt.Errorf("切换到 %s 失败: %w", label, err)
 		}
 		humanize.Delay(ctx, humanize.AfterClick)
-		page.MustWaitStable()
+		page.MustWait(`(tab) => {
+			const a = window.__INITIAL_STATE__?.user?.activeTab;
+			const value = a && (a.value !== undefined ? a.value : a._value);
+			return value && value.query === tab;
+		}`, string(tab))
 		return nil
 	}
 	return fmt.Errorf("未找到子 tab %q", label)
+}
+
+func waitProfileData(page *rod.Page) {
+	page.MustWait(`() => {
+		const user = window.__INITIAL_STATE__?.user;
+		const info = user?.userPageData;
+		const value = info && (info.value !== undefined ? info.value : info._value);
+		const notes = user?.notes;
+		const items = notes && (notes.value !== undefined ? notes.value : notes._value);
+		return !!value?.basicInfo && Array.isArray(items);
+	}`)
 }

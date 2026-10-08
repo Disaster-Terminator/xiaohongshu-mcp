@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-rod/rod"
+	"github.com/go-rod/rod/lib/cdp"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/launcher/flags"
 	"github.com/go-rod/rod/lib/proto"
@@ -30,6 +31,7 @@ type Browser struct {
 	// 这里用浏览器实读的真实版本 + 平台补丁实读的 platform 三项拼出自洽元数据补回。nil = 不覆盖。
 	uaOverride *proto.NetworkSetUserAgentOverride
 	closeOnce  sync.Once
+	cancel     context.CancelFunc
 }
 
 // Config holds the configuration options for the browser.
@@ -201,11 +203,28 @@ func New(options ...Option) *Browser {
 	l := launcher.New().Context(ctx).
 		Headless(cfg.Headless).
 		Set("--no-sandbox")
+	lifetime, stop := context.WithCancel(context.Background())
+	constructionDone := make(chan struct{})
+	defer close(constructionDone)
+	go func() {
+		select {
+		case <-ctx.Done():
+			select {
+			case <-constructionDone:
+			default:
+				stop()
+			}
+		case <-constructionDone:
+		}
+	}()
 	handedOff := false
 	defer func() {
-		if !handedOff && l.PID() != 0 {
-			l.Kill()
-			l.Cleanup()
+		if !handedOff {
+			stop()
+			if l.PID() != 0 {
+				l.Kill()
+				l.Cleanup()
+			}
 		}
 	}()
 
@@ -246,8 +265,12 @@ func New(options ...Option) *Browser {
 
 	url := l.MustLaunch()
 
-	browser := rod.New().Context(ctx).
-		ControlURL(url).
+	client, err := cdp.StartWithURL(ctx, url, nil)
+	if err != nil {
+		panic(err)
+	}
+	browser := rod.New().Context(lifetime).
+		Client(client).
 		Trace(cfg.Trace).
 		MustConnect()
 
@@ -265,6 +288,7 @@ func New(options ...Option) *Browser {
 		browser:   browser,
 		launcher:  l,
 		stealthJS: cfg.StealthJS,
+		cancel:    stop,
 	}
 
 	// 启用指纹时，构建一致 UA 覆盖，补回 go-rod 建页面丢失的 UA 版本保真度
@@ -276,7 +300,6 @@ func New(options ...Option) *Browser {
 		}
 	}
 
-	b.browser = browser.Context(context.Background())
 	handedOff = true
 	return b
 }
@@ -338,6 +361,7 @@ func (b *Browser) Close() {
 	b.closeOnce.Do(func() {
 		defer b.launcher.Cleanup()
 		defer b.launcher.Kill()
+		defer b.cancel()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := b.browser.Context(ctx).Close(); err != nil {

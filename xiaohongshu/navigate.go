@@ -19,9 +19,8 @@ func NewNavigate(page *rod.Page) *NavigateAction {
 func (n *NavigateAction) ToExplorePage(ctx context.Context) error {
 	page := n.page.Context(ctx).Timeout(60 * time.Second) // 加超时保护，避免 MustNavigate/MustWaitStable 无限挂
 
-	page.MustNavigate("https://www.xiaohongshu.com/explore").
-		MustWaitLoad().
-		MustElement(`div#app`)
+	navigateDocument(page, "https://www.xiaohongshu.com/explore")
+	page.MustElement(`div#app`)
 
 	return nil
 }
@@ -34,8 +33,6 @@ func (n *NavigateAction) ToProfilePage(ctx context.Context) error {
 		return err
 	}
 
-	page.MustWaitStable()
-
 	// Find and click the "我" channel link in sidebar
 	profileLink := page.MustElement(`div.main-container li.user.side-bar-component a.link-wrapper span.channel`)
 	humanize.Delay(ctx, humanize.BeforeClick)
@@ -44,7 +41,7 @@ func (n *NavigateAction) ToProfilePage(ctx context.Context) error {
 	}
 
 	// Wait for navigation to complete
-	page.MustWaitLoad()
+	waitProfileData(page)
 
 	return nil
 }
