@@ -115,9 +115,12 @@ func (s *SearchAction) Search(ctx context.Context, keyword string, filters ...Fi
 	page := s.page.Context(ctx).Timeout(60 * time.Second)
 
 	searchURL := makeSearchURL(keyword)
-	page.MustNavigate(searchURL)
-	page.MustWaitStable()
-	page.MustWait(`() => window.__INITIAL_STATE__ !== undefined`)
+	navigateDocument(page, searchURL)
+	page.MustWait(`() => {
+		const store = window.__INITIAL_STATE__?.search?.feeds;
+		const feeds = store && (store.value !== undefined ? store.value : store._value);
+		return Array.isArray(feeds);
+	}`)
 	humanize.Delay(ctx, humanize.AfterNavigate)
 
 	if len(pending) > 0 {

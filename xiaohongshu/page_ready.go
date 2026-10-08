@@ -16,8 +16,6 @@ const feedReadySelectors = ".interact-container, .note-scroller, " +
 
 // waitFeedPageReady 等待 feed 详情页可用：load 事件 + 关键容器出现，不要求整页 DOM 静止。
 func waitFeedPageReady(page *rod.Page) {
-	page.MustWaitLoad()
-
 	if _, err := page.Timeout(feedReadyTimeout).Element(feedReadySelectors); err != nil {
 		// 没等到也继续，后续 Element 各自带轮询
 		logrus.Warnf("详情页关键容器未在 %s 内出现，继续尝试: %v", feedReadyTimeout, err)

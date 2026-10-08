@@ -17,9 +17,6 @@ type FeedsListAction struct {
 func NewFeedsListAction(page *rod.Page) *FeedsListAction {
 	pp := page.Timeout(60 * time.Second)
 
-	pp.MustNavigate("https://www.xiaohongshu.com")
-	pp.MustWaitDOMStable()
-
 	return &FeedsListAction{page: pp}
 }
 
@@ -27,6 +24,7 @@ func NewFeedsListAction(page *rod.Page) *FeedsListAction {
 func (f *FeedsListAction) GetFeedsList(ctx context.Context) ([]Feed, error) {
 	// 重设超时：.Context(ctx) 会替换掉构造函数里 Timeout(60s) 的 deadline
 	page := f.page.Context(ctx).Timeout(60 * time.Second)
+	navigateDocument(page, "https://www.xiaohongshu.com")
 
 	readFeeds := func() string {
 		return page.MustEval(`() => {

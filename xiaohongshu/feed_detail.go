@@ -108,7 +108,7 @@ func (f *FeedDetailAction) GetFeedDetailWithConfig(ctx context.Context, feedID, 
 	// 使用retry-go处理页面导航和DOM稳定等待
 	err := retry.Do(
 		func() error {
-			page.MustNavigate(url)
+			navigateDocument(page, url)
 			waitFeedPageReady(page)
 			return nil
 		},
