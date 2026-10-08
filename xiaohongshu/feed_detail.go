@@ -133,6 +133,8 @@ func (f *FeedDetailAction) GetFeedDetailWithConfig(ctx context.Context, feedID, 
 		if err := f.loadAllCommentsWithConfig(ctx, page, config); err != nil {
 			logrus.Warnf("加载全部评论失败: %v", err)
 		}
+	} else if err := waitInitialComments(page, feedID); err != nil {
+		return nil, fmt.Errorf("等待首批评论失败: %w", err)
 	}
 
 	// ctx 已取消时直接返回，避免在已取消的 page 上执行 MustEval 触发 panic
@@ -141,6 +143,32 @@ func (f *FeedDetailAction) GetFeedDetailWithConfig(ctx context.Context, feedID, 
 	}
 
 	return f.extractFeedDetail(page, feedID)
+}
+
+// A detail container can be ready before its lazy-loaded first comment page.
+const initialCommentsReadyJS = `(feedID) => {
+	const detail = window.__INITIAL_STATE__?.note?.noteDetailMap?.[feedID];
+	const comments = detail?.comments;
+	if (!Array.isArray(comments?.list)) return false;
+	if (comments.list.length > 0 || comments.cursor) return true;
+	if (String(detail.note?.interactInfo?.commentCount) === "0") return true;
+	const empty = document.querySelector('.no-comments-text');
+	return comments.hasMore === false && !!empty?.getClientRects().length;
+}`
+
+func waitInitialComments(page *rod.Page, feedID string) error {
+	page = page.Timeout(15 * time.Second)
+	ready, err := page.Eval(initialCommentsReadyJS, feedID)
+	if err != nil {
+		return err
+	}
+	if ready.Value.Bool() {
+		return nil
+	}
+	if err := rod.Try(func() { scrollToCommentsArea(page) }); err != nil {
+		return err
+	}
+	return page.Wait(rod.Eval(initialCommentsReadyJS, feedID))
 }
 
 // ========== 评论加载器 ==========
