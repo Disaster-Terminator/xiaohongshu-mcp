@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"strings"
@@ -11,6 +12,7 @@ import (
 )
 
 type browserConfig struct {
+	launchContext context.Context
 	// fingerprintSeed 固定指纹 seed；>0 时钉死，同账号每次同一套指纹。0 = 每次随机。
 	fingerprintSeed int
 	// proxy 代理地址；非空时启用。
@@ -18,6 +20,10 @@ type browserConfig struct {
 }
 
 type Option func(*browserConfig)
+
+func WithLaunchContext(ctx context.Context) Option {
+	return func(c *browserConfig) { c.launchContext = ctx }
+}
 
 // WithProxy 设置代理（http/https/socks5）。空字符串视为不启用。
 func WithProxy(proxy string) Option {
@@ -63,6 +69,7 @@ func NewBrowser(headless bool, options ...Option) *headless_browser.Browser {
 	}
 
 	opts := []headless_browser.Option{
+		headless_browser.WithLaunchContext(cfg.launchContext),
 		headless_browser.WithHeadless(headless),
 		// 用内置浏览器的默认配置，不强制 UA。
 		headless_browser.WithFingerprint(""), // 空 = 按运行 OS 自动：Linux→windows，mac→macos
