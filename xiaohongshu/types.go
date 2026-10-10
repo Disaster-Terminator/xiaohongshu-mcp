@@ -109,8 +109,11 @@ type VideoCapability struct {
 
 // FeedDetailResponse 表示 Feed 详情页完整响应
 type FeedDetailResponse struct {
-	Note     FeedDetail  `json:"note"`
-	Comments CommentList `json:"comments"`
+	Note           FeedDetail   `json:"note"`
+	Comments       *CommentList `json:"comments"`
+	CommentsStatus string       `json:"comments_status,omitempty"`
+	Warning        string       `json:"warning,omitempty"`
+	Partial        bool         `json:"-"`
 }
 
 // FeedDetail 表示详情页的笔记内容

@@ -429,7 +429,8 @@ func (s *AppServer) handleGetFeedDetail(ctx context.Context, args map[string]any
 
 	logrus.Infof("MCP: 获取Feed详情 - Feed ID: %s, loadAllComments=%v, config=%+v", feedID, loadAll, config)
 
-	result, err := s.xiaohongshuService.GetFeedDetailWithConfig(ctx, feedID, xsecToken, loadAll, config)
+	requireComments, _ := args["require_comments"].(bool)
+	result, err := s.xiaohongshuService.GetFeedDetailWithConfig(ctx, feedID, xsecToken, loadAll, config, requireComments)
 	if err != nil {
 		return &MCPToolResult{
 			Content: []MCPContent{{
@@ -451,12 +452,13 @@ func (s *AppServer) handleGetFeedDetail(ctx context.Context, args map[string]any
 		}
 	}
 
-	return &MCPToolResult{
-		Content: []MCPContent{{
-			Type: "text",
-			Text: string(jsonData),
-		}},
+	response := &MCPToolResult{
+		Content: []MCPContent{{Type: "text", Text: string(jsonData)}},
 	}
+	if result.Partial {
+		response.Meta = map[string]any{"partial": true, "error_kind": "detail_comments_not_ready"}
+	}
+	return response
 }
 
 // handleUserProfile 获取用户主页

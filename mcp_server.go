@@ -58,9 +58,10 @@ type FilterOption struct {
 
 // FeedDetailArgs 获取Feed详情的参数
 type FeedDetailArgs struct {
+	RequireComments  bool   `json:"require_comments,omitempty" jsonschema:"评论是否为必需数据。默认false；评论加载超时可返回正文，并明确标记结果不完整、评论未加载。设true时评论失败整次报错。"`
 	FeedID           string `json:"feed_id" jsonschema:"小红书笔记ID，从Feed列表获取"`
 	XsecToken        string `json:"xsec_token" jsonschema:"访问令牌，从Feed列表的xsecToken字段获取"`
-	LoadAllComments  bool   `json:"load_all_comments,omitempty" jsonschema:"是否加载全部评论。false仅返回前10条一级评论（默认），true滚动加载更多评论"`
+	LoadAllComments  bool   `json:"load_all_comments,omitempty" jsonschema:"是否加载更多评论。false读取首批可见评论（默认）；评论超时可能返回正文及不完整状态。true滚动加载更多评论，加载失败时报错"`
 	Limit            int    `json:"limit,omitempty" jsonschema:"【仅当load_all_comments为true时生效】限制加载的一级评论数量。例如20表示最多加载20条，默认20"`
 	ClickMoreReplies bool   `json:"click_more_replies,omitempty" jsonschema:"【仅当load_all_comments为true时生效】是否展开二级回复。true展开子评论，false不展开（默认）"`
 	ReplyLimit       int    `json:"reply_limit,omitempty" jsonschema:"【仅当click_more_replies为true时生效】跳过回复数过多的评论。例如10表示跳过超过10条回复的，默认10"`
@@ -149,7 +150,7 @@ func InitMCPServer(appServer *AppServer) *mcp.Server {
 var toolCallSequence atomic.Uint64
 
 func toolFailureKind(message string) string {
-	for _, kind := range []string{"security_verification", "login_required", "search_page_not_ready", "search_navigation", "search_filter_missing", "search_page_state"} {
+	for _, kind := range []string{"detail_comments_not_ready", "detail_note_not_ready", "security_verification", "login_required", "search_page_not_ready", "search_navigation", "search_filter_missing", "search_page_state"} {
 		if strings.Contains(message, "["+kind+"]") {
 			return kind
 		}
@@ -200,6 +201,9 @@ func withPanicRecovery[T any](
 			if err != nil {
 				fields["outcome"] = "error"
 				fields["error_kind"] = toolFailureKind(err.Error())
+			} else if result != nil && !result.IsError && result.Meta["partial"] == true {
+				fields["outcome"] = "partial"
+				fields["error_kind"] = "detail_comments_not_ready"
 			} else if result != nil && result.IsError {
 				fields["outcome"] = "error"
 				fields["error_kind"] = "tool_error"
@@ -330,7 +334,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 	mcp.AddTool(server,
 		&mcp.Tool{
 			Name:        "get_feed_detail",
-			Description: "获取小红书笔记详情，返回笔记内容、图片、作者信息、互动数据（点赞/收藏/分享数）及评论列表。视频笔记额外返回 video 字段，含各编码档位的视频直链与字幕地址（均带签名、有时效）。默认返回前10条一级评论，如需更多评论请设置load_all_comments=true",
+			Description: "获取小红书笔记详情，返回笔记内容、图片、作者信息、互动数据（点赞/收藏/分享数）及评论列表。视频笔记额外返回 video 字段，含各编码档位的视频直链与字幕地址（均带签名、有时效）。默认读取首批评论；若评论超时但正文有效，返回partial=true、comments=null及明确警告，不表示零评论。评论必需时设置require_comments=true；更多评论设置load_all_comments=true",
 			Annotations: &mcp.ToolAnnotations{
 				Title:        "Get Feed Detail",
 				ReadOnlyHint: true,
@@ -341,6 +345,7 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 				"feed_id":           args.FeedID,
 				"xsec_token":        args.XsecToken,
 				"load_all_comments": args.LoadAllComments,
+				"require_comments":  args.RequireComments,
 			}
 
 			// 只有当 load_all_comments=true 时，才处理其他参数
@@ -621,6 +626,7 @@ func convertToMCPResult(result *MCPToolResult) *mcp.CallToolResult {
 	return &mcp.CallToolResult{
 		Content: contents,
 		IsError: result.IsError,
+		Meta:    mcp.Meta(result.Meta),
 	}
 }
 

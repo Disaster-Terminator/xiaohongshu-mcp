@@ -189,9 +189,9 @@ func (s *AppServer) getFeedDetailHandler(c *gin.Context) {
 			MaxCommentItems:     req.CommentConfig.MaxCommentItems,
 			ScrollSpeed:         req.CommentConfig.ScrollSpeed,
 		}
-		result, err = s.xiaohongshuService.GetFeedDetailWithConfig(c.Request.Context(), req.FeedID, req.XsecToken, req.LoadAllComments, config)
+		result, err = s.xiaohongshuService.GetFeedDetailWithConfig(c.Request.Context(), req.FeedID, req.XsecToken, req.LoadAllComments, config, req.RequireComments)
 	} else {
-		result, err = s.xiaohongshuService.GetFeedDetail(c.Request.Context(), req.FeedID, req.XsecToken, req.LoadAllComments)
+		result, err = s.xiaohongshuService.GetFeedDetail(c.Request.Context(), req.FeedID, req.XsecToken, req.LoadAllComments, req.RequireComments)
 	}
 
 	if err != nil {

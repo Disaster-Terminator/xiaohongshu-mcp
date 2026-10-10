@@ -423,12 +423,12 @@ func (s *XiaohongshuService) SearchFeeds(ctx context.Context, keyword string, fi
 }
 
 // GetFeedDetail 获取Feed详情
-func (s *XiaohongshuService) GetFeedDetail(ctx context.Context, feedID, xsecToken string, loadAllComments bool) (*FeedDetailResponse, error) {
-	return s.GetFeedDetailWithConfig(ctx, feedID, xsecToken, loadAllComments, xiaohongshu.DefaultCommentLoadConfig())
+func (s *XiaohongshuService) GetFeedDetail(ctx context.Context, feedID, xsecToken string, loadAllComments bool, requireComments ...bool) (*FeedDetailResponse, error) {
+	return s.GetFeedDetailWithConfig(ctx, feedID, xsecToken, loadAllComments, xiaohongshu.DefaultCommentLoadConfig(), requireComments...)
 }
 
 // GetFeedDetailWithConfig 使用配置获取Feed详情
-func (s *XiaohongshuService) GetFeedDetailWithConfig(ctx context.Context, feedID, xsecToken string, loadAllComments bool, config xiaohongshu.CommentLoadConfig) (*FeedDetailResponse, error) {
+func (s *XiaohongshuService) GetFeedDetailWithConfig(ctx context.Context, feedID, xsecToken string, loadAllComments bool, config xiaohongshu.CommentLoadConfig, requireComments ...bool) (*FeedDetailResponse, error) {
 	b := newBrowser(ctx)
 	defer b.Close()
 
@@ -437,14 +437,15 @@ func (s *XiaohongshuService) GetFeedDetailWithConfig(ctx context.Context, feedID
 
 	action := xiaohongshu.NewFeedDetailAction(page)
 
-	result, err := action.GetFeedDetailWithConfig(ctx, feedID, xsecToken, loadAllComments, config)
+	result, err := action.GetFeedDetailWithConfig(ctx, feedID, xsecToken, loadAllComments, config, requireComments...)
 	if err != nil {
 		return nil, err
 	}
 
 	response := &FeedDetailResponse{
-		FeedID: feedID,
-		Data:   result,
+		FeedID:  feedID,
+		Data:    result,
+		Partial: result.Partial,
 	}
 
 	return response, nil

@@ -9,7 +9,11 @@ Allowed changes:
 - Waiting for a new document and actual read data instead of full-page stability.
 - Read-navigation compatibility through the visible site controls, with bounded
   failures for login/security verification and metadata-only MCP call timing.
-- Regression tests proving these failures and preserving existing tool contracts.
+- Explicit partial note results when optional comments time out: retain valid
+  note data, return comments as null with unavailable status and a warning, and
+  record the result as partial. Required comments remain errors; never treat an
+  uninitialized comment page as zero comments.
+- Regression tests proving these failures and preserving other tool contracts.
 
 The owner-approved complete tool boundary remains in cloud-ops. Publishing, interaction,
 cookie format, fingerprint behavior and browser engine are unchanged.

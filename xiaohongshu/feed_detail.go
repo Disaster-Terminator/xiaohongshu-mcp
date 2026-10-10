@@ -3,8 +3,10 @@ package xiaohongshu
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"math/rand"
+	urlpkg "net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -82,26 +84,29 @@ func (c CommentLoadConfig) normalize() CommentLoadConfig {
 }
 
 type FeedDetailAction struct {
-	page *rod.Page
+	page                   *rod.Page
+	initialCommentsTimeout time.Duration
 }
 
 func NewFeedDetailAction(page *rod.Page) *FeedDetailAction {
-	return &FeedDetailAction{page: page}
+	return &FeedDetailAction{page: page, initialCommentsTimeout: 15 * time.Second}
 }
 
 // ========== 主要业务逻辑 ==========
 
-func (f *FeedDetailAction) GetFeedDetail(ctx context.Context, feedID, xsecToken string, loadAllComments bool, config CommentLoadConfig) (*FeedDetailResponse, error) {
-	return f.GetFeedDetailWithConfig(ctx, feedID, xsecToken, loadAllComments, config)
+func (f *FeedDetailAction) GetFeedDetail(ctx context.Context, feedID, xsecToken string, loadAllComments bool, config CommentLoadConfig, requireComments ...bool) (*FeedDetailResponse, error) {
+	return f.GetFeedDetailWithConfig(ctx, feedID, xsecToken, loadAllComments, config, requireComments...)
 }
 
-func (f *FeedDetailAction) GetFeedDetailWithConfig(ctx context.Context, feedID, xsecToken string, loadAllComments bool, config CommentLoadConfig) (*FeedDetailResponse, error) {
+func (f *FeedDetailAction) GetFeedDetailWithConfig(ctx context.Context, feedID, xsecToken string, loadAllComments bool, config CommentLoadConfig, requireComments ...bool) (*FeedDetailResponse, error) {
+	return f.getFeedDetailAtURL(ctx, feedID, makeFeedDetailURL(feedID, xsecToken), loadAllComments, config, requireComments...)
+}
+
+func (f *FeedDetailAction) getFeedDetailAtURL(ctx context.Context, feedID, url string, loadAllComments bool, config CommentLoadConfig, requireComments ...bool) (*FeedDetailResponse, error) {
 	config = config.normalize()
-
 	page := f.page.Context(ctx).Timeout(10 * time.Minute)
-	url := makeFeedDetailURL(feedID, xsecToken)
 
-	logrus.Infof("打开 feed 详情页: %s", url)
+	logrus.Info("打开 feed 详情页")
 	logrus.Infof("配置: 点击更多=%v, 回复阈值=%d, 最大评论数=%d, 滚动速度=%s",
 		config.ClickMoreReplies, config.MaxRepliesThreshold, config.MaxCommentItems, config.ScrollSpeed)
 
@@ -131,10 +136,13 @@ func (f *FeedDetailAction) GetFeedDetailWithConfig(ctx context.Context, feedID, 
 
 	if loadAllComments {
 		if err := f.loadAllCommentsWithConfig(ctx, page, config); err != nil {
-			logrus.Warnf("加载全部评论失败: %v", err)
+			return nil, fmt.Errorf("[detail_comments_not_ready] 加载评论失败: %w", err)
 		}
-	} else if err := waitInitialComments(page, feedID); err != nil {
-		return nil, fmt.Errorf("等待首批评论失败: %w", err)
+	} else if err := waitInitialCommentsWithin(page, feedID, f.initialCommentsTimeout); err != nil {
+		if (len(requireComments) > 0 && requireComments[0]) || ctx.Err() != nil || !stderrors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("[detail_comments_not_ready] 等待首批评论失败: %w", err)
+		}
+		return f.partialDetail(page, feedID, url, err)
 	}
 
 	// ctx 已取消时直接返回，避免在已取消的 page 上执行 MustEval 触发 panic
@@ -157,7 +165,14 @@ const initialCommentsReadyJS = `(feedID) => {
 }`
 
 func waitInitialComments(page *rod.Page, feedID string) error {
-	page = page.Timeout(15 * time.Second)
+	return waitInitialCommentsWithin(page, feedID, 15*time.Second)
+}
+
+func waitInitialCommentsWithin(page *rod.Page, feedID string, timeout time.Duration) error {
+	if timeout <= 0 {
+		timeout = 15 * time.Second
+	}
+	page = page.Timeout(timeout)
 	ready, err := page.Eval(initialCommentsReadyJS, feedID)
 	if err != nil {
 		return err
@@ -169,6 +184,37 @@ func waitInitialComments(page *rod.Page, feedID string) error {
 		return err
 	}
 	return page.Wait(rod.Eval(initialCommentsReadyJS, feedID))
+}
+
+// The optional first comment page must not discard an authenticated note that
+// was already read. Never manufacture an empty comment list for an unread page.
+func (f *FeedDetailAction) partialDetail(page *rod.Page, feedID, targetURL string, cause error) (*FeedDetailResponse, error) {
+	target, err := urlpkg.Parse(targetURL)
+	if err != nil {
+		return nil, err
+	}
+	allowed, err := page.Eval(`(id, origin) => {
+		const visible = el => !!el?.getClientRects().length;
+		return location.origin === origin && location.pathname === '/explore/' + id &&
+			!/^(Security Verification|安全验证)$/i.test(document.title.trim()) &&
+			!visible(document.querySelector('.r-captcha-modal'));
+	}`, feedID, target.Scheme+"://"+target.Host)
+	if err != nil || !allowed.Value.Bool() {
+		return nil, fmt.Errorf("[detail_comments_not_ready] 等待首批评论失败: %w", cause)
+	}
+	detail, err := f.extractFeedDetail(page, feedID)
+	if err != nil {
+		return nil, err
+	}
+	if detail.Note.NoteID != feedID {
+		return nil, fmt.Errorf("[detail_note_not_ready] 当前笔记正文未就绪")
+	}
+	detail.Comments = nil
+	detail.CommentsStatus = "unavailable"
+	detail.Partial = true
+	detail.Warning = "正文已读取，但评论未加载；本次结果不完整，不能将其解释为没有评论。"
+	logrus.WithFields(logrus.Fields{"phase": "initial_comments", "error_kind": "detail_comments_not_ready", "outcome": "partial"}).Warn("Note read without comments")
+	return detail, nil
 }
 
 // ========== 评论加载器 ==========
@@ -1024,7 +1070,7 @@ func (f *FeedDetailAction) extractFeedDetail(page *rod.Page, feedID string) (*Fe
 
 	return &FeedDetailResponse{
 		Note:     noteDetail.Note,
-		Comments: noteDetail.Comments,
+		Comments: &noteDetail.Comments,
 	}, nil
 }
 

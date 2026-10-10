@@ -22,8 +22,9 @@ type SuccessResponse struct {
 
 // MCPToolResult MCP 工具结果（内部使用）
 type MCPToolResult struct {
-	Content []MCPContent `json:"content"`
-	IsError bool         `json:"isError,omitempty"`
+	Content []MCPContent   `json:"content"`
+	IsError bool           `json:"isError,omitempty"`
+	Meta    map[string]any `json:"_meta,omitempty"`
 }
 
 // MCPContent MCP 内容（内部使用）
@@ -51,6 +52,7 @@ type FeedDetailRequest struct {
 	FeedID          string             `json:"feed_id" binding:"required"`
 	XsecToken       string             `json:"xsec_token" binding:"required"`
 	LoadAllComments bool               `json:"load_all_comments,omitempty"`
+	RequireComments bool               `json:"require_comments,omitempty"`
 	CommentConfig   *CommentLoadConfig `json:"comment_config,omitempty"`
 }
 
@@ -61,8 +63,9 @@ type SearchFeedsRequest struct {
 
 // FeedDetailResponse Feed详情响应
 type FeedDetailResponse struct {
-	FeedID string `json:"feed_id"`
-	Data   any    `json:"data"`
+	FeedID  string `json:"feed_id"`
+	Data    any    `json:"data"`
+	Partial bool   `json:"partial,omitempty"`
 }
 
 // PostCommentRequest 发表评论请求
