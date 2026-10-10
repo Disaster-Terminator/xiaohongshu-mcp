@@ -69,6 +69,8 @@ window.__INITIAL_STATE__.user={userInfo:{value:{guest:false,userId:'fixture'}}};
 				defer page.Close()
 				keyword := `咖啡 & "fixture"`
 				start := time.Now()
+				require.NoError(t, prepareSearchHome(page, server.URL+"/explore", time.Second))
+				require.Nil(t, page.MustEval(`() => window.submitted`).Val(), "initialization must not submit a search")
 				require.NoError(t, navigateSearchFromHome(page, keyword, server.URL+"/explore"))
 				require.GreaterOrEqual(t, time.Since(start), 450*time.Millisecond)
 				require.Zero(t, directLoads.Load(), "search must not load the protected direct URL")
