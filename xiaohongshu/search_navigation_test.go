@@ -131,11 +131,11 @@ func TestSearchNavigationRejectsStaleDataAndHonorsCancellation(t *testing.T) {
 func TestSearchNavigationControlProbeDeadlineUsesRemainingBudget(t *testing.T) {
 	b := searchFixtureBrowser(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `<input id="search-input"><button class="search-icon"></button><script>
+		fmt.Fprint(w, `<html><body><input id="search-input"><button class="search-icon"></button><script>
 window.__INITIAL_STATE__={user:{userInfo:{value:{userId:'fixture'}}}};
 document.querySelector('#search-input').oninput=()=>{};
 document.querySelector('.search-icon').onclick=()=>{throw new Error('must not submit during readiness')};
-</script>`)
+</script></body></html>`)
 	}))
 	defer server.Close()
 	page := b.MustPage().Timeout(5 * time.Second)
