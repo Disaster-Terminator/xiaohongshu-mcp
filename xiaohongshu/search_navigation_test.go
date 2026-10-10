@@ -47,10 +47,13 @@ func TestSearchNavigationUsesSPAAndWaitsForCurrentResults(t *testing.T) {
 <div class="filter" style="display:none">old hidden filter</div>
 <div class="filter ai-chat-filter">AI filter</div>
 <script>
-window.__INITIAL_STATE__={search:{feeds:{value:[{id:'stale'}]}}};
+window.__INITIAL_STATE__={user:{userInfo:{value:{guest:false,userId:'fixture'}}},search:{feeds:{value:[{id:'stale'}]}}};
 setTimeout(()=>{
+document.querySelector('#search-input').addEventListener('input',()=>{
+ window.fixtureQuery=document.querySelector('#search-input').value;
+});
 document.querySelector('.search-icon').onclick=()=>{
- window.submitted=document.querySelector('#search-input').value;
+ window.submitted=window.fixtureQuery;
  history.pushState({},'', '/search_result_ai?keyword='+encodeURIComponent(%s));
  setTimeout(()=>{
    window.__INITIAL_STATE__.search.feeds={_value:%s};

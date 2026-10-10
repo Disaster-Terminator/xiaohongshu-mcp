@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/go-rod/rod"
+	"github.com/go-rod/rod/lib/proto"
 	"github.com/sirupsen/logrus"
 	"github.com/xpzouying/xiaohongshu-mcp/humanize"
 )
@@ -97,7 +98,17 @@ func waitSearchPage(page *rod.Page, keyword, phase, before string, timeout time.
 		lastState = result.Value.String()
 		switch lastState {
 		case "ready":
-			return nil
+			if phase != "home" {
+				return nil
+			}
+			bound, err := searchControlsBound(page)
+			if err != nil {
+				return err
+			}
+			if bound {
+				return nil
+			}
+			lastState = "controls_not_bound"
 		case "security_verification":
 			return fmt.Errorf("[security_verification] 小红书页面要求安全验证；本次搜索已停止，未自动重试")
 		}
@@ -127,6 +138,33 @@ func waitSearchPage(page *rod.Page, keyword, phase, before string, timeout time.
 		case <-ticker.C:
 		}
 	}
+}
+
+// Server-rendered controls can exist before their input/click handlers bind.
+// CDP exposes standard DOM listeners without depending on Vue internals. Only
+// listener presence is inspected; handler source or account data is not read.
+func searchControlsBound(page *rod.Page) (bool, error) {
+	result, err := (proto.RuntimeEvaluate{
+		Expression: `(() => {
+			const bound = (node, type) => {
+				for (let depth = 0; node && depth < 4; depth++, node = node.parentElement) {
+					if ((getEventListeners(node)[type] || []).length) return true;
+				}
+				return false;
+			};
+			return {inputBound:bound(document.querySelector('#search-input'), 'input'),
+				clickBound:bound(document.querySelector('.search-icon'), 'click')};
+		})()`,
+		IncludeCommandLineAPI: true,
+		ReturnByValue:         true,
+	}).Call(page.Timeout(2 * time.Second))
+	if err != nil {
+		return false, fmt.Errorf("[search_page_state] 无法读取搜索控件事件状态: %w", err)
+	}
+	if result.ExceptionDetails != nil || result.Result == nil {
+		return false, fmt.Errorf("[search_page_state] 搜索控件事件状态不可用")
+	}
+	return result.Result.Value.Get("inputBound").Bool() && result.Result.Value.Get("clickBound").Bool(), nil
 }
 
 func visibleSearchFilter(page *rod.Page) (*rod.Element, error) {
