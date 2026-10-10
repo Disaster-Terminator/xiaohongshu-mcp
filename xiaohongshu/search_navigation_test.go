@@ -127,3 +127,50 @@ func TestSearchNavigationRejectsStaleDataAndHonorsCancellation(t *testing.T) {
 	err = waitSearchPage(page.Context(ctx), "fixture", "results", "stale", time.Second)
 	require.True(t, errors.Is(err, context.Canceled))
 }
+
+func TestSearchNavigationControlProbeDeadlineUsesRemainingBudget(t *testing.T) {
+	b := searchFixtureBrowser(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `<input id="search-input"><button class="search-icon"></button><script>
+window.__INITIAL_STATE__={user:{userInfo:{value:{userId:'fixture'}}}};
+document.querySelector('#search-input').oninput=()=>{};
+document.querySelector('.search-icon').onclick=()=>{throw new Error('must not submit during readiness')};
+</script>`)
+	}))
+	defer server.Close()
+	page := b.MustPage().Timeout(5 * time.Second)
+	defer page.Close()
+	page.MustNavigate(server.URL)
+	page.MustWait(`() => !!window.__INITIAL_STATE__`)
+	probes := 0
+	err := waitSearchPageWithControls(page, "fixture", "home", "", time.Second, func(p *rod.Page) (bool, error) {
+		probes++
+		if probes == 1 {
+			return false, fmt.Errorf("CDP observation timed out: %w", context.DeadlineExceeded)
+		}
+		return searchControlsBound(p)
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, probes)
+
+	start := time.Now()
+	err = waitSearchPageWithControls(page, "fixture", "home", "", 250*time.Millisecond, func(*rod.Page) (bool, error) {
+		return false, context.DeadlineExceeded
+	})
+	require.ErrorContains(t, err, "[search_page_not_ready]")
+	require.GreaterOrEqual(t, time.Since(start), 250*time.Millisecond)
+	require.Less(t, time.Since(start), time.Second)
+
+	broken := errors.New("CDP connection lost")
+	err = waitSearchPageWithControls(page, "fixture", "home", "", time.Second, func(*rod.Page) (bool, error) {
+		return false, broken
+	})
+	require.ErrorIs(t, err, broken)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	err = waitSearchPageWithControls(page.Context(ctx), "fixture", "home", "", time.Second, func(*rod.Page) (bool, error) {
+		cancel()
+		return false, context.Canceled
+	})
+	require.ErrorIs(t, err, context.Canceled)
+}

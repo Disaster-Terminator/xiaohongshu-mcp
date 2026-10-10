@@ -1,6 +1,8 @@
 package xiaohongshu
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -85,6 +87,10 @@ const searchPageStateJS = `(keyword, phase, before) => {
 }`
 
 func waitSearchPage(page *rod.Page, keyword, phase, before string, timeout time.Duration) error {
+	return waitSearchPageWithControls(page, keyword, phase, before, timeout, searchControlsBound)
+}
+
+func waitSearchPageWithControls(page *rod.Page, keyword, phase, before string, timeout time.Duration, controlsBound func(*rod.Page) (bool, error)) error {
 	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
 	ticker := time.NewTicker(200 * time.Millisecond)
@@ -101,9 +107,18 @@ func waitSearchPage(page *rod.Page, keyword, phase, before string, timeout time.
 			if phase != "home" {
 				return nil
 			}
-			bound, err := searchControlsBound(page)
+			bound, err := controlsBound(page)
 			if err != nil {
-				return err
+				if requestErr := page.GetContext().Err(); requestErr != nil {
+					return requestErr
+				}
+				// A busy renderer can exhaust this observation's 2s context
+				// while the search still has time left. Keep waiting under
+				// the original phase/request budgets; never retry submission.
+				if !errors.Is(err, context.DeadlineExceeded) {
+					return err
+				}
+				logrus.WithField("phase", phase).Warn("Search control observation timed out; waiting within phase budget")
 			}
 			if bound {
 				return nil

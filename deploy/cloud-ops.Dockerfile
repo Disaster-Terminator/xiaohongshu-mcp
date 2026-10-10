@@ -3,7 +3,7 @@ FROM golang:1.24 AS build
 WORKDIR /src
 COPY . .
 RUN go test ./... && go vet ./...
-ARG VERSION=v2.5.5-cloudops.5
+ARG VERSION=v2.5.5-cloudops.6
 RUN CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${VERSION}" -o /out/app . && \
     CGO_ENABLED=0 go test -c ./xiaohongshu -o /out/navigation.test && \
     CGO_ENABLED=0 go test -c . -o /out/ownership.test && \
