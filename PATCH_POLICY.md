@@ -41,3 +41,12 @@ Search compatibility evidence: OpenCLI issue #2562 and PR #2011. Site security
 verification must stop the operation with an explicit error, never an automatic
 retry or fabricated empty result. An SPA route change does not commit a new
 document; require the current query and fresh results rather than loader changes.
+
+## Owner acceptance before upstream contribution
+
+Repair and verify the deployed connector first. Contribution work is a later task.
+Before opening any upstream PR, open a PR against the default branch of
+`Disaster-Terminator/xiaohongshu-mcp` for the owner to review and explicitly accept.
+Only after that acceptance may a separate upstream contribution be considered.
+Keep the proposed upstream change minimal, reproducible, and separate from
+cloud-ops deployment or diagnostic conventions.
