@@ -48,5 +48,7 @@ Repair and verify the deployed connector first. Contribution work is a later tas
 Before opening any upstream PR, open a PR against the default branch of
 `Disaster-Terminator/xiaohongshu-mcp` for the owner to review and explicitly accept.
 Only after that acceptance may a separate upstream contribution be considered.
+Do not open an upstream issue or PR without explicit owner permission. Acceptance
+of a fork PR alone does not authorize an upstream submission.
 Keep the proposed upstream change minimal, reproducible, and separate from
 cloud-ops deployment or diagnostic conventions.

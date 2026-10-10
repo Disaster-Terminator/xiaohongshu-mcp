@@ -65,7 +65,15 @@ const searchPageStateJS = `(keyword, phase, before) => {
 		return login ? 'login_required' : 'pending';
 	}
 	const url = new URL(location.href);
-	if (!url.pathname.startsWith('/search_result') || url.searchParams.get('keyword') !== keyword)
+	// The site's SPA currently encodes keyword before giving it to the router,
+	// so URLSearchParams can still contain one encoded layer. Decode only that
+	// observed layer, and still require the exact original query.
+	const query = url.searchParams.get('keyword');
+	let queryMatches = query === keyword;
+	if (!queryMatches && query !== null) {
+		try { queryMatches = decodeURIComponent(query) === keyword; } catch (_) {}
+	}
+	if (!url.pathname.startsWith('/search_result') || !queryMatches)
 		return login ? 'login_required' : 'pending';
 	const store = state.search?.feeds;
 	const feeds = store?.value ?? store?._value ?? store;
@@ -103,10 +111,13 @@ func waitSearchPage(page *rod.Page, keyword, phase, before string, timeout time.
 				const ref = state.user?.userInfo, user = ref?.value ?? ref?._value ?? ref;
 				const input = document.querySelector('#search-input'), icon = document.querySelector('.search-icon');
 				const store = state.search?.feeds, feeds = store?.value ?? store?._value ?? store;
+				const query = new URL(location.href).searchParams.get('keyword');
+				let decodedMatches = false;
+				try { decodedMatches = query !== null && decodeURIComponent(query) === keyword; } catch (_) {}
 				return JSON.stringify({userHydrated:!!(user?.userId || user?.user_id),
 					inputPresent:!!input, iconPresent:!!icon, inputVisible:!!input?.getClientRects().length,
 					iconVisible:!!icon?.getClientRects().length, vueMounted:!!document.querySelector('#app')?.__vue_app__,
-					searchRoute:location.pathname.startsWith('/search_result'), queryMatches:new URL(location.href).searchParams.get('keyword') === keyword,
+					searchRoute:location.pathname.startsWith('/search_result'), queryOnceMatches:query === keyword, queryTwiceMatches:decodedMatches,
 					feedCount:Array.isArray(feeds)?feeds.length:null});
 			}`, keyword); diagnosticErr == nil {
 				logrus.WithFields(logrus.Fields{"phase": phase, "page_state": lastState, "signals": diagnostic.Value.String()}).Warn("Search page not ready")
