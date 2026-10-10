@@ -640,13 +640,35 @@ func newBrowser(ctx context.Context) *leasedBrowser {
 			release()
 		}
 	}()
+	var pooled *pooledBrowser
+	if os.Getenv("XHS_BROWSER_REUSE") == "true" {
+		session, sessionErr := browserSession()
+		pooled = reusableBrowsers.take()
+		if pooled != nil && (sessionErr != nil || pooled.session != session || !pooled.alive(ctx)) {
+			pooled.browser.Close()
+			pooled = nil
+		}
+		if pooled != nil {
+			handedOff = true
+			logrus.Info("Browser lease reused from account pool")
+			return &leasedBrowser{Browser: pooled.browser, release: release, ctx: ctx, pooled: pooled}
+		}
+		if sessionErr == nil {
+			pooled = &pooledBrowser{session: session}
+		}
+	} else if idle := reusableBrowsers.take(); idle != nil {
+		idle.browser.Close()
+	}
 	b := browser.NewBrowser(configs.IsHeadless(),
 		browser.WithLaunchContext(ctx),
 		browser.WithFingerprintSeed(configs.FingerprintSeed()),
 		browser.WithProxy(configs.Proxy()),
 	)
+	if pooled != nil {
+		pooled.browser = b
+	}
 	handedOff = true
-	return &leasedBrowser{Browser: b, release: release, ctx: ctx}
+	return &leasedBrowser{Browser: b, release: release, ctx: ctx, pooled: pooled}
 }
 
 func saveCookies(page *rod.Page) error {

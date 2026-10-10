@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-rod/rod"
+	"github.com/sirupsen/logrus"
 	"github.com/xpzouying/headless_browser"
 )
 
@@ -61,6 +62,7 @@ type leasedBrowser struct {
 	release func()
 	once    sync.Once
 	ctx     context.Context
+	pooled  *pooledBrowser
 }
 
 // 建页面也可能卡在 CDP；请求取消时关闭仍由本请求持有的浏览器。
@@ -74,12 +76,21 @@ func (b *leasedBrowser) NewPage() *rod.Page {
 		case <-done:
 		}
 	}()
-	return b.Browser.NewPage()
+	page := b.Browser.NewPage()
+	if b.pooled != nil {
+		b.pooled.engine.Store(page.Browser())
+	}
+	return page
 }
 
 func (b *leasedBrowser) Close() {
 	b.once.Do(func() {
 		defer b.release()
+		if b.pooled != nil && b.pooled.canReturn(b.ctx) {
+			reusableBrowsers.put(b.pooled)
+			logrus.Info("Browser lease returned to account pool")
+			return
+		}
 		b.Browser.Close()
 	})
 }

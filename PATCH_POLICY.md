@@ -6,6 +6,9 @@ It is a bounded recovery build for cloud-ops, not a separate feature roadmap.
 Allowed changes:
 
 - Browser ownership, exception-safe cleanup, cancellation and bounded admission.
+- Opt-in bounded reuse of account browser processes under the same admission
+  limit, with cookie-change invalidation and disposal on cancellation, dead CDP
+  connections or unclosed action pages. Each call still owns a fresh page.
 - Waiting for a new document and actual read data instead of full-page stability.
 - Read-navigation compatibility through the visible site controls, with bounded
   failures for login/security verification and metadata-only MCP call timing.
