@@ -24,7 +24,10 @@ func navigateSearchFromHome(page *rod.Page, keyword, homeURL string) error {
 	if err := navigateDocumentChecked(page.Timeout(20*time.Second), homeURL); err != nil {
 		return fmt.Errorf("[search_navigation] 搜索主页导航失败: %w", err)
 	}
-	if err := waitSearchPage(page, keyword, "home", "", 20*time.Second); err != nil {
+	// Cold homepage initialization can exceed 20s even when its security
+	// dependency completes normally. The outer search context still caps
+	// the entire operation at 60s, including the results phase.
+	if err := waitSearchPage(page, keyword, "home", "", 30*time.Second); err != nil {
 		return err
 	}
 	before := readFeedIDs(page)
