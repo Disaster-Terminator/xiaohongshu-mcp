@@ -47,7 +47,7 @@ func TestSearchNavigationUsesSPAAndWaitsForCurrentResults(t *testing.T) {
 <div class="filter" style="display:none">old hidden filter</div>
 <div class="filter ai-chat-filter">AI filter</div>
 <script>
-window.__INITIAL_STATE__={user:{userInfo:{value:{guest:false,userId:'fixture'}}},search:{feeds:{value:[{id:'stale'}]}}};
+window.__INITIAL_STATE__={search:{feeds:{value:[{id:'stale'}]}}};
 setTimeout(()=>{
 document.querySelector('.search-icon').onclick=()=>{
  window.submitted=document.querySelector('#search-input').value;
@@ -57,7 +57,7 @@ document.querySelector('.search-icon').onclick=()=>{
    if(%v) document.querySelector('.search-empty').style.display='block';
  },350);
 };
-document.querySelector('#app').__vue_app__={};
+window.__INITIAL_STATE__.user={userInfo:{value:{guest:false,userId:'fixture'}}};
 },150);
 </script></div></body></html>`, map[bool]string{false: `window.submitted`, true: `encodeURIComponent(window.submitted)`}[doubleEncoded], map[bool]string{false: `[{id:'current'}]`, true: `[]`}[empty], empty)
 				}))

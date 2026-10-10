@@ -57,10 +57,9 @@ const searchPageStateJS = `(keyword, phase, before) => {
 	const login = visible(document.querySelector('.login-container'));
 	if (phase === 'home') {
 		const hydrated = user && (user.userId || user.user_id || user.guest === true);
-		// The new homepage hides the classic controls but retains their Vue
-		// search handlers. Geometry is not a readiness signal for this SPA.
-		const mounted = !!document.querySelector('#app')?.__vue_app__;
-		if (hydrated && mounted && !login && document.querySelector('#search-input') &&
+		// The new homepage retains hidden classic search controls. Use site
+		// data and the resulting query transition, not framework internals.
+		if (hydrated && !login && document.querySelector('#search-input') &&
 			document.querySelector('.search-icon')) return 'ready';
 		return login ? 'login_required' : 'pending';
 	}
@@ -115,8 +114,7 @@ func waitSearchPage(page *rod.Page, keyword, phase, before string, timeout time.
 				let decodedMatches = false;
 				try { decodedMatches = query !== null && decodeURIComponent(query) === keyword; } catch (_) {}
 				return JSON.stringify({userHydrated:!!(user?.userId || user?.user_id),
-					inputPresent:!!input, iconPresent:!!icon, inputVisible:!!input?.getClientRects().length,
-					iconVisible:!!icon?.getClientRects().length, vueMounted:!!document.querySelector('#app')?.__vue_app__,
+					inputPresent:!!input, iconPresent:!!icon,
 					searchRoute:location.pathname.startsWith('/search_result'), queryOnceMatches:query === keyword, queryTwiceMatches:decodedMatches,
 					feedCount:Array.isArray(feeds)?feeds.length:null});
 			}`, keyword); diagnosticErr == nil {
