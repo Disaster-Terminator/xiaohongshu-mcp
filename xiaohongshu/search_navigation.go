@@ -21,13 +21,7 @@ func navigateSearch(page *rod.Page, keyword string) error {
 }
 
 func navigateSearchFromHome(page *rod.Page, keyword, homeURL string) error {
-	if err := navigateDocumentChecked(page.Timeout(20*time.Second), homeURL); err != nil {
-		return fmt.Errorf("[search_navigation] 搜索主页导航失败: %w", err)
-	}
-	// Cold homepage initialization can exceed 20s even when its security
-	// dependency completes normally. The outer search context still caps
-	// the entire operation at 60s, including the results phase.
-	if err := waitSearchPage(page, keyword, "home", "", 30*time.Second); err != nil {
+	if err := prepareSearchHome(page, homeURL, 30*time.Second); err != nil {
 		return err
 	}
 	before := readFeedIDs(page)
@@ -39,6 +33,19 @@ func navigateSearchFromHome(page *rod.Page, keyword, homeURL string) error {
 		return fmt.Errorf("[search_navigation] 页面搜索控件不可用")
 	}
 	return waitSearchPage(page, keyword, "results", before, 20*time.Second)
+}
+
+// Prepare initializes the account's site session without submitting a query.
+// Startup owns this bounded work instead of the first tool request.
+func (s *SearchAction) Prepare(ctx context.Context) error {
+	return prepareSearchHome(s.page.Context(ctx).Timeout(60*time.Second), searchHomeURL, 45*time.Second)
+}
+
+func prepareSearchHome(page *rod.Page, homeURL string, timeout time.Duration) error {
+	if err := navigateDocumentChecked(page.Timeout(20*time.Second), homeURL); err != nil {
+		return fmt.Errorf("[search_navigation] 搜索主页导航失败: %w", err)
+	}
+	return waitSearchPage(page, "", "home", "", timeout)
 }
 
 const submitSearchJS = `(keyword) => {

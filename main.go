@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/xpzouying/xiaohongshu-mcp/browser"
 	"github.com/xpzouying/xiaohongshu-mcp/configs"
 	"github.com/xpzouying/xiaohongshu-mcp/cookies"
+	"github.com/xpzouying/xiaohongshu-mcp/xiaohongshu"
 )
 
 // version 构建版本号，发布时通过 -ldflags "-X main.version=vX.Y.Z" 注入。
@@ -42,6 +45,22 @@ func main() {
 	configs.SetFingerprintSeed(configs.ResolveFingerprintSeed(
 		cookies.NewLoadCookie(cookies.GetCookiesFilePath())))
 	configs.SetProxy(configs.ProxyFromEnv())
+	if os.Getenv("XHS_BROWSER_REUSE") == "true" {
+		func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			b := newBrowser(ctx)
+			defer b.Close()
+			page := b.NewPage()
+			defer page.Close()
+			if err := xiaohongshu.NewSearchAction(page).Prepare(ctx); err != nil {
+				logrus.Warnf("Account browser initialization failed; login and recovery endpoints remain available: %v", err)
+			} else {
+				logrus.Info("Account browser initialized before tool admission")
+			}
+		}()
+		defer reusableBrowsers.closeIdle()
+	}
 
 	// 初始化服务
 	xiaohongshuService := NewXiaohongshuService()
