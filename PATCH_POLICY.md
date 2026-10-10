@@ -7,9 +7,11 @@ Allowed changes:
 
 - Browser ownership, exception-safe cleanup, cancellation and bounded admission.
 - Waiting for a new document and actual read data instead of full-page stability.
+- Read-navigation compatibility through the visible site controls, with bounded
+  failures for login/security verification and metadata-only MCP call timing.
 - Regression tests proving these failures and preserving existing tool contracts.
 
-The seven-tool read-only boundary remains in cloud-ops. Publishing, interaction,
+The owner-approved complete tool boundary remains in cloud-ops. Publishing, interaction,
 cookie format, fingerprint behavior and browser engine are unchanged.
 Monitoring and operator recovery also remain in cloud-ops/Komodo/Datadog.
 
@@ -34,3 +36,8 @@ The operational closure queue remains cloud-ops issue #89.
 References informing the fixes: upstream PRs #826, #823 and #839. These patches
 are not blindly cherry-picked: cleanup must precede page creation, canceled
 requests must not remain queued, and empty search results must remain valid.
+
+Search compatibility evidence: OpenCLI issue #2562 and PR #2011. Site security
+verification must stop the operation with an explicit error, never an automatic
+retry or fabricated empty result. An SPA route change does not commit a new
+document; require the current query and fresh results rather than loader changes.

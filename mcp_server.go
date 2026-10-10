@@ -5,6 +5,9 @@ import (
 	"encoding/base64"
 	"fmt"
 	"runtime/debug"
+	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sirupsen/logrus"
@@ -143,17 +146,41 @@ func InitMCPServer(appServer *AppServer) *mcp.Server {
 	return server
 }
 
+var toolCallSequence atomic.Uint64
+
+func toolFailureKind(message string) string {
+	for _, kind := range []string{"security_verification", "login_required", "search_page_not_ready", "search_navigation", "search_filter_missing", "search_page_state"} {
+		if strings.Contains(message, "["+kind+"]") {
+			return kind
+		}
+	}
+	if strings.Contains(message, "browser capacity unavailable") {
+		return "browser_capacity"
+	}
+	if strings.Contains(message, "context deadline exceeded") {
+		return "deadline"
+	}
+	if strings.Contains(message, "context canceled") {
+		return "canceled"
+	}
+	return "tool_error"
+}
+
 func withPanicRecovery[T any](
 	toolName string,
 	handler func(context.Context, *mcp.CallToolRequest, T) (*mcp.CallToolResult, any, error),
 ) func(context.Context, *mcp.CallToolRequest, T) (*mcp.CallToolResult, any, error) {
 
 	return func(ctx context.Context, req *mcp.CallToolRequest, args T) (result *mcp.CallToolResult, resp any, err error) {
+		started := time.Now()
+		callID := toolCallSequence.Add(1)
+		logrus.WithFields(logrus.Fields{"tool": toolName, "call_id": callID}).Info("Tool call started")
 		defer func() {
 			if r := recover(); r != nil {
 				logrus.WithFields(logrus.Fields{
-					"tool":  toolName,
-					"panic": r,
+					"tool":    toolName,
+					"panic":   r,
+					"call_id": callID,
 				}).Error("Tool handler panicked")
 
 				logrus.Errorf("Stack trace:\n%s", debug.Stack())
@@ -169,6 +196,21 @@ func withPanicRecovery[T any](
 				resp = nil
 				err = nil
 			}
+			fields := logrus.Fields{"tool": toolName, "call_id": callID, "elapsed_ms": time.Since(started).Milliseconds(), "outcome": "success"}
+			if err != nil {
+				fields["outcome"] = "error"
+				fields["error_kind"] = toolFailureKind(err.Error())
+			} else if result != nil && result.IsError {
+				fields["outcome"] = "error"
+				fields["error_kind"] = "tool_error"
+				for _, content := range result.Content {
+					if text, ok := content.(*mcp.TextContent); ok {
+						fields["error_kind"] = toolFailureKind(text.Text)
+						break
+					}
+				}
+			}
+			logrus.WithFields(fields).Info("Tool call completed")
 		}()
 
 		return handler(ctx, req, args)

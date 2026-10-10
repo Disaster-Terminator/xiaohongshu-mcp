@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -114,18 +113,17 @@ func (s *SearchAction) Search(ctx context.Context, keyword string, filters ...Fi
 	// 否则搜索页不 stable 时 MustWaitStable/MustWait 会永久挂起（无 deadline 可依赖）。
 	page := s.page.Context(ctx).Timeout(60 * time.Second)
 
-	searchURL := makeSearchURL(keyword)
-	navigateDocument(page, searchURL)
-	page.MustWait(`() => {
-		const store = window.__INITIAL_STATE__?.search?.feeds;
-		const feeds = store && (store.value !== undefined ? store.value : store._value);
-		return Array.isArray(feeds);
-	}`)
+	if err := navigateSearch(page, keyword); err != nil {
+		return nil, err
+	}
 	humanize.Delay(ctx, humanize.AfterNavigate)
 
 	if len(pending) > 0 {
 		// 悬停在筛选按钮上展开面板
-		filterButton := page.MustElement(`div.filter`)
+		filterButton, err := visibleSearchFilter(page)
+		if err != nil {
+			return nil, err
+		}
 		if err := humanize.Hover(filterButton); err != nil {
 			return nil, fmt.Errorf("悬停筛选按钮失败: %w", err)
 		}
@@ -171,8 +169,8 @@ func (s *SearchAction) Search(ctx context.Context, keyword string, filters ...Fi
 		    window.__INITIAL_STATE__.search &&
 		    window.__INITIAL_STATE__.search.feeds) {
 			const feeds = window.__INITIAL_STATE__.search.feeds;
-			const feedsData = feeds.value !== undefined ? feeds.value : feeds._value;
-			if (feedsData) {
+			const feedsData = feeds.value ?? feeds._value ?? feeds;
+			if (Array.isArray(feedsData)) {
 				return JSON.stringify(feedsData);
 			}
 		}
@@ -298,15 +296,4 @@ func findFilterOption(page *rod.Page, pf pendingFilter) (*rod.Element, error) {
 	}
 
 	return nil, fmt.Errorf("筛选面板里没有「%s」这一组", pf.group)
-}
-
-func makeSearchURL(keyword string) string {
-
-	values := url.Values{}
-	values.Set("keyword", keyword)
-	values.Set("source", "web_explore_feed")
-
-	//https://www.xiaohongshu.com/search_result?keyword=%25E7%258E%258B%25E5%25AD%2590&source=web_search_result_notes
-	//https://www.xiaohongshu.com/search_result?keyword=%25E7%258E%258B%25E5%25AD%2590&source=web_explore_feed
-	return fmt.Sprintf("https://www.xiaohongshu.com/search_result?%s", values.Encode())
 }
