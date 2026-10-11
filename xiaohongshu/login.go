@@ -20,20 +20,10 @@ func NewLogin(page *rod.Page) *LoginAction {
 func (a *LoginAction) CheckLoginStatus(ctx context.Context) (bool, error) {
 	// 加超时保护：只是查登录态的快速检查，不应无限挂（登录扫码的等待在 Login/WaitForLogin 里）
 	pp := a.page.Context(ctx).Timeout(30 * time.Second)
-	navigateDocument(pp, "https://www.xiaohongshu.com/explore")
-	pp.MustWait(`() => !!document.querySelector(".main-container .user .link-wrapper .channel") ||
-		!!document.querySelector(".login-container")`)
-
-	exists, _, err := pp.Has(`.main-container .user .link-wrapper .channel`)
-	if err != nil {
-		return false, errors.Wrap(err, "check login status failed")
+	if err := navigateDocumentChecked(pp.Timeout(15*time.Second), "https://www.xiaohongshu.com/explore"); err != nil {
+		return false, err
 	}
-
-	if !exists {
-		return false, errors.Wrap(err, "login status element not found")
-	}
-
-	return true, nil
+	return waitAuthenticated(pp, 12*time.Second)
 }
 
 // CurrentUser 当前登录用户的基础信息。
@@ -49,7 +39,8 @@ func (a *LoginAction) CurrentUser(ctx context.Context) (*CurrentUser, error) {
 
 	res, err := pp.Eval(`() => {
 		const u = window.__INITIAL_STATE__ && window.__INITIAL_STATE__.user;
-		const info = u && u.userInfo && u.userInfo.value !== undefined ? u.userInfo.value : (u && u.userInfo);
+		const ref = u?.userInfo;
+        const info = ref?.value ?? ref?._value ?? ref;
 		if (!info || info.guest) return "";
 		return JSON.stringify({nickname: info.nickname, userId: info.userId || info.user_id});
 	}`)
@@ -95,7 +86,11 @@ func (a *LoginAction) FetchQrcodeImage(ctx context.Context) (string, bool, error
 
 	time.Sleep(2 * time.Second)
 
-	if exists, _, _ := pp.Has(".main-container .user .link-wrapper .channel"); exists {
+	authenticated, authErr := waitAuthenticated(pp, 12*time.Second)
+	if authErr != nil {
+		return "", false, authErr
+	}
+	if authenticated {
 		return "", true, nil
 	}
 
@@ -120,8 +115,8 @@ func (a *LoginAction) WaitForLogin(ctx context.Context) bool {
 		case <-ctx.Done():
 			return false
 		case <-ticker.C:
-			el, err := pp.Element(".main-container .user .link-wrapper .channel")
-			if err == nil && el != nil {
+			state, err := pp.Eval(authenticationStateJS)
+			if err == nil && state.Value.String() == "authenticated" {
 				return true
 			}
 		}

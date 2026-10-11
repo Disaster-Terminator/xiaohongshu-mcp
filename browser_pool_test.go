@@ -90,3 +90,13 @@ func TestBrowserPoolDoesNotCreateExtraOwnersAtCapacity(t *testing.T) {
 	require.Len(t, reusableBrowsers.idle, 2)
 	require.Len(t, browserSlots().slots, 0)
 }
+
+func TestBrowserPoolRejectsUnclosedBlankActionPages(t *testing.T) {
+	setupBrowserPoolTest(t)
+	b := newBrowser(context.Background())
+	b.NewPage()
+	b.NewPage()
+	b.Close()
+	require.Nil(t, reusableBrowsers.take())
+	require.Empty(t, browserSlots().slots)
+}

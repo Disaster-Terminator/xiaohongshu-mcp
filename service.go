@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-rod/rod"
@@ -401,6 +402,10 @@ func (s *XiaohongshuService) ListFeeds(ctx context.Context) (*FeedsListResponse,
 }
 
 func (s *XiaohongshuService) SearchFeeds(ctx context.Context, keyword string, filters ...xiaohongshu.FilterOption) (*FeedsListResponse, error) {
+	keyword = strings.TrimSpace(keyword)
+	if keyword == "" {
+		return nil, fmt.Errorf("[invalid_argument] 搜索关键词不能为空")
+	}
 	b := newBrowser(ctx)
 	defer b.Close()
 
@@ -429,6 +434,11 @@ func (s *XiaohongshuService) GetFeedDetail(ctx context.Context, feedID, xsecToke
 
 // GetFeedDetailWithConfig 使用配置获取Feed详情
 func (s *XiaohongshuService) GetFeedDetailWithConfig(ctx context.Context, feedID, xsecToken string, loadAllComments bool, config xiaohongshu.CommentLoadConfig, requireComments ...bool) (*FeedDetailResponse, error) {
+	if loadAllComments {
+		if err := config.Validate(); err != nil {
+			return nil, err
+		}
+	}
 	b := newBrowser(ctx)
 	defer b.Close()
 
@@ -630,10 +640,12 @@ func (s *XiaohongshuService) ReplyNotification(ctx context.Context, commentID, c
 }
 
 func newBrowser(ctx context.Context) *leasedBrowser {
+	queuedAt := time.Now()
 	release, err := browserSlots().acquire(ctx)
 	if err != nil {
 		panic(err)
 	}
+	logrus.WithField("queue_ms", time.Since(queuedAt).Milliseconds()).Info("Browser lease admitted")
 	handedOff := false
 	defer func() {
 		if !handedOff {

@@ -294,12 +294,13 @@ func (s *AppServer) handleListFeeds(ctx context.Context) *MCPToolResult {
 // handleSearchFeeds 处理搜索Feeds
 func (s *AppServer) handleSearchFeeds(ctx context.Context, args SearchFeedsArgs) *MCPToolResult {
 	logrus.Info("MCP: 搜索Feeds")
+	args.Keyword = strings.TrimSpace(args.Keyword)
 
 	if args.Keyword == "" {
 		return &MCPToolResult{
 			Content: []MCPContent{{
 				Type: "text",
-				Text: "搜索Feeds失败: 缺少关键词参数",
+				Text: "[invalid_argument] 搜索Feeds失败: 缺少关键词参数",
 			}},
 			IsError: true,
 		}

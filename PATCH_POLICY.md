@@ -16,6 +16,10 @@ Allowed changes:
   note data, return comments as null with unavailable status and a warning, and
   record the result as partial. Required comments remain errors; never treat an
   uninitialized comment page as zero comments.
+- Authentication must distinguish explicit guest state from pending hydration;
+  protected reads cannot turn signed-out or unavailable state into zero counts.
+- Enforce the documented primary-comment limit and input enums before navigation;
+  local truncation must not expose a cursor that skips omitted rows.
 - Regression tests proving these failures and preserving other tool contracts.
 
 The owner-approved complete tool boundary remains in cloud-ops. Publishing, interaction,

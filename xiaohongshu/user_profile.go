@@ -54,14 +54,23 @@ func (u *UserProfileAction) UserProfile(ctx context.Context, userID, xsecToken s
 	page := u.page.Context(ctx).Timeout(60 * time.Second) // 重设被 .Context 清掉的 deadline
 
 	searchURL := makeUserProfileURL(userID, xsecToken, tab)
-	navigateDocument(page, searchURL)
-
+	if err := navigateDocumentChecked(page.Timeout(15*time.Second), searchURL); err != nil {
+		return nil, err
+	}
+	if err := waitProfileData(page); err != nil {
+		return nil, err
+	}
+	if err := u.selectTab(ctx, page, tab); err != nil {
+		return nil, err
+	}
 	return u.extractUserProfileData(page, tab)
 }
 
 // extractUserProfileData 从页面中提取用户资料数据的通用方法
 func (u *UserProfileAction) extractUserProfileData(page *rod.Page, tab ProfileTab) (*UserProfileResponse, error) {
-	waitProfileData(page)
+	if err := waitProfileData(page); err != nil {
+		return nil, err
+	}
 
 	userDataResult := page.MustEval(`() => {
 		if (window.__INITIAL_STATE__ &&
@@ -119,7 +128,7 @@ func (u *UserProfileAction) extractUserProfileData(page *rod.Page, tab ProfileTa
 		want = TabNotes
 	}
 	if notesData.Query != "" && ProfileTab(notesData.Query) != want {
-		return nil, fmt.Errorf("当前 tab 为 %q，与请求的 %q 不符", notesData.Query, want)
+		return nil, fmt.Errorf("[profile_tab_unavailable] 当前 tab 与请求的 tab 不符，不能返回其他 tab 内容")
 	}
 
 	// 组装响应
@@ -156,7 +165,9 @@ func (u *UserProfileAction) GetMyProfileViaSidebar(ctx context.Context, tab Prof
 	}
 
 	// 等待页面加载完成并获取 __INITIAL_STATE__
-	waitProfileData(page)
+	if err := waitProfileData(page); err != nil {
+		return nil, err
+	}
 
 	if err := u.selectTab(ctx, page, tab); err != nil {
 		return nil, err
@@ -171,15 +182,23 @@ func (u *UserProfileAction) selectTab(ctx context.Context, page *rod.Page, tab P
 		return nil
 	}
 
+	state, stateErr := page.Eval(`() => { const ref=window.__INITIAL_STATE__?.user?.activeTab; const v=ref?.value??ref?._value??ref; return v?.query||''; }`)
+	if stateErr != nil {
+		return stateErr
+	}
+	if state.Value.String() == string(tab) {
+		return nil
+	}
 	label := tabLabel[tab]
-	elems, err := page.Elements(`.reds-tab-item.sub-tab-list`)
+	elems, err := page.Timeout(3 * time.Second).Elements(`.reds-tab-item.sub-tab-list`)
 	if err != nil {
 		return fmt.Errorf("未找到主页子 tab: %w", err)
 	}
 
 	for _, elem := range elems {
 		text, err := elem.Text()
-		if err != nil || strings.TrimSpace(text) != label {
+		visible, visibilityErr := elem.Visible()
+		if err != nil || visibilityErr != nil || !visible || strings.TrimSpace(text) != label {
 			continue
 		}
 		humanize.Delay(ctx, humanize.BeforeClick)
@@ -187,23 +206,55 @@ func (u *UserProfileAction) selectTab(ctx context.Context, page *rod.Page, tab P
 			return fmt.Errorf("切换到 %s 失败: %w", label, err)
 		}
 		humanize.Delay(ctx, humanize.AfterClick)
-		page.MustWait(`(tab) => {
+		if err := page.Timeout(15 * time.Second).Wait(rod.Eval(`(tab) => {
 			const a = window.__INITIAL_STATE__?.user?.activeTab;
 			const value = a && (a.value !== undefined ? a.value : a._value);
 			return value && value.query === tab;
-		}`, string(tab))
+		}`, string(tab))); err != nil {
+			return fmt.Errorf("[profile_tab_unavailable] 子 tab 未在限定时间内切换: %w", err)
+		}
 		return nil
 	}
-	return fmt.Errorf("未找到子 tab %q", label)
+	return fmt.Errorf("[profile_tab_unavailable] 未找到可见的目标子 tab，可能未公开")
 }
 
-func waitProfileData(page *rod.Page) {
-	page.MustWait(`() => {
-		const user = window.__INITIAL_STATE__?.user;
-		const info = user?.userPageData;
-		const value = info && (info.value !== undefined ? info.value : info._value);
-		const notes = user?.notes;
-		const items = notes && (notes.value !== undefined ? notes.value : notes._value);
-		return !!value?.basicInfo && Array.isArray(items);
-	}`)
+const profilePageStateJS = `() => {
+    const visible=x=>!!x?.getClientRects().length;
+    if(location.pathname.startsWith('/website-login/')||/^(Security Verification|安全验证)$/i.test(document.title.trim())||visible(document.querySelector('.r-captcha-modal'))) return 'security_verification';
+    if(visible(document.querySelector('.access-wrapper'))) return 'profile_access_denied';
+    const user=window.__INITIAL_STATE__?.user;
+    const ref=user?.userPageData, value=ref?.value??ref?._value??ref;
+    const notes=user?.notes,items=notes?.value??notes?._value??notes;
+    if(value?.basicInfo && Array.isArray(items)) return 'ready';
+    if(visible(document.querySelector('.login-container'))) return 'login_required';
+    return 'pending';
+}`
+
+func waitProfileData(page *rod.Page) error {
+	return waitProfileDataWithin(page, 15*time.Second)
+}
+func waitProfileDataWithin(page *rod.Page, timeout time.Duration) error {
+	pp := page.Timeout(timeout)
+	for {
+		r, err := pp.Eval(profilePageStateJS)
+		if err != nil {
+			if page.GetContext().Err() != nil {
+				return page.GetContext().Err()
+			}
+			return fmt.Errorf("[profile_not_ready] 无法读取目标主页状态: %w", err)
+		}
+		switch state := r.Value.String(); state {
+		case "ready":
+			return nil
+		case "security_verification", "login_required", "profile_access_denied":
+			return fmt.Errorf("[%s] 目标主页当前不可读取", state)
+		}
+		select {
+		case <-page.GetContext().Done():
+			return page.GetContext().Err()
+		case <-pp.GetContext().Done():
+			return fmt.Errorf("[profile_not_ready] 目标主页数据未在限定时间内就绪；不能仅据此判定令牌失效")
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
 }

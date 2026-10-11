@@ -96,16 +96,28 @@ func NewNotificationAction(page *rod.Page) *NotificationAction {
 
 // UnreadCount 读取三个分区的未读数。
 func (n *NotificationAction) UnreadCount(ctx context.Context) (*NotificationCount, error) {
+	return n.unreadCountAtURL(ctx, "https://www.xiaohongshu.com/explore")
+}
+
+func (n *NotificationAction) unreadCountAtURL(ctx context.Context, url string) (*NotificationCount, error) {
 	page := n.page.Context(ctx).Timeout(60 * time.Second)
 
-	navigateDocument(page, "https://www.xiaohongshu.com/explore")
+	if err := navigateDocumentChecked(page.Timeout(15*time.Second), url); err != nil {
+		return nil, err
+	}
+	if err := requireAuthenticated(page); err != nil {
+		return nil, err
+	}
 	humanize.Delay(ctx, humanize.AfterNavigate)
 
-	page.MustWait(`() => !!window.__INITIAL_STATE__?.notification?.notificationCount`)
+	if err := page.Timeout(12 * time.Second).Wait(rod.Eval(`() => { const ref=window.__INITIAL_STATE__?.notification?.notificationCount; const c=ref?.value??ref?._value??ref; return c && ["mentions","likes","connections","unreadCount"].every(k=>Number.isFinite(c[k])&&c[k]>=0); }`)); err != nil {
+		return nil, fmt.Errorf("[notification_not_ready] 未读数未就绪: %w", err)
+	}
 
 	res, err := page.Eval(`() => {
 		const s = window.__INITIAL_STATE__;
-		const c = s && s.notification && s.notification.notificationCount;
+		const ref = s?.notification?.notificationCount;
+        const c = ref?.value ?? ref?._value ?? ref;
 		return c ? JSON.stringify(c) : "";
 	}`)
 	if err != nil {

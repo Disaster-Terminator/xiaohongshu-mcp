@@ -61,6 +61,18 @@ func DefaultCommentLoadConfig() CommentLoadConfig {
 	}
 }
 
+func (c CommentLoadConfig) Validate() error {
+	if c.MaxCommentItems < 0 || c.MaxRepliesThreshold < 0 {
+		return fmt.Errorf("[invalid_argument] 评论数量与回复阈值不能为负数")
+	}
+	switch c.ScrollSpeed {
+	case "", "slow", "normal", "fast":
+		return nil
+	default:
+		return fmt.Errorf("[invalid_argument] scroll_speed 可选 slow / normal / fast")
+	}
+}
+
 // normalize 把零值字段填回默认值。零值一律按「未设置」处理，不再按「无上限」。
 //
 // 之所以必须在这一层做：配置从 MCP 和 HTTP 两条路进来，字段名和结构都不一样，
@@ -103,6 +115,11 @@ func (f *FeedDetailAction) GetFeedDetailWithConfig(ctx context.Context, feedID, 
 }
 
 func (f *FeedDetailAction) getFeedDetailAtURL(ctx context.Context, feedID, url string, loadAllComments bool, config CommentLoadConfig, requireComments ...bool) (*FeedDetailResponse, error) {
+	if loadAllComments {
+		if err := config.Validate(); err != nil {
+			return nil, err
+		}
+	}
 	config = config.normalize()
 	page := f.page.Context(ctx).Timeout(10 * time.Minute)
 
@@ -150,7 +167,28 @@ func (f *FeedDetailAction) getFeedDetailAtURL(ctx context.Context, feedID, url s
 		return nil, err
 	}
 
-	return f.extractFeedDetail(page, feedID)
+	detail, err := f.extractFeedDetail(page, feedID)
+	if err == nil && loadAllComments {
+		limitPrimaryComments(detail.Comments, config.MaxCommentItems)
+		if detail.Comments != nil && detail.Comments.Truncated {
+			detail.Warning = "已按 limit 截断一级评论；loadedCount 是已加载批次数量，本次 cursor 不用于续读。"
+		}
+	}
+	return detail, err
+}
+
+// Site pages arrive in batches. Loading a batch does not authorize returning
+// more primary comments than requested. A server cursor beyond omitted rows
+// cannot be used to resume this locally truncated result.
+func limitPrimaryComments(comments *CommentList, limit int) {
+	if comments == nil || limit <= 0 || len(comments.List) <= limit {
+		return
+	}
+	comments.LoadedCount = len(comments.List)
+	comments.List = comments.List[:limit]
+	comments.Truncated = true
+	comments.HasMore = true
+	comments.Cursor = ""
 }
 
 // A detail container can be ready before its lazy-loaded first comment page.

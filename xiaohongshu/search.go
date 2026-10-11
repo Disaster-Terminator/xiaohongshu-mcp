@@ -103,10 +103,14 @@ func NewSearchAction(page *rod.Page) *SearchAction {
 }
 
 func (s *SearchAction) Search(ctx context.Context, keyword string, filters ...FilterOption) ([]Feed, error) {
+	keyword = strings.TrimSpace(keyword)
+	if keyword == "" {
+		return nil, fmt.Errorf("[invalid_argument] 搜索关键词不能为空")
+	}
 	// 先校验筛选取值，必须在导航之前——写错的值不该先向平台发一次请求再报错。
 	pending, err := collectFilters(filters)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("[invalid_argument] %w", err)
 	}
 
 	// 注意 .Context(ctx) 会替换掉 NewSearchAction 里设的 60s deadline，必须在其后重新 Timeout，

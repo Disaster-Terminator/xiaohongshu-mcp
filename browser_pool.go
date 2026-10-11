@@ -86,6 +86,9 @@ func (b *pooledBrowser) canReturn(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
+	if len(pages) > 1 {
+		return false
+	} // Only the launcher's initial blank tab may remain.
 	for _, page := range pages {
 		info, e := page.Info()
 		if e != nil || info.URL != "about:blank" {

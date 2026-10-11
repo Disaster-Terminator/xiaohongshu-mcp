@@ -150,7 +150,7 @@ func InitMCPServer(appServer *AppServer) *mcp.Server {
 var toolCallSequence atomic.Uint64
 
 func toolFailureKind(message string) string {
-	for _, kind := range []string{"detail_comments_not_ready", "detail_note_not_ready", "security_verification", "login_required", "search_page_not_ready", "search_navigation", "search_filter_missing", "search_page_state"} {
+	for _, kind := range []string{"invalid_argument", "auth_state_not_ready", "notification_not_ready", "profile_navigation", "profile_not_ready", "profile_access_denied", "profile_tab_unavailable", "detail_comments_not_ready", "detail_note_not_ready", "security_verification", "login_required", "search_page_not_ready", "search_navigation", "search_filter_missing", "search_page_state"} {
 		if strings.Contains(message, "["+kind+"]") {
 			return kind
 		}
@@ -213,6 +213,12 @@ func withPanicRecovery[T any](
 						break
 					}
 				}
+			}
+			if result != nil && result.IsError {
+				if result.Meta == nil {
+					result.Meta = mcp.Meta{}
+				}
+				result.Meta["error_kind"] = fields["error_kind"]
 			}
 			logrus.WithFields(fields).Info("Tool call completed")
 		}()
@@ -341,6 +347,9 @@ func registerTools(server *mcp.Server, appServer *AppServer) {
 			},
 		},
 		withPanicRecovery("get_feed_detail", func(ctx context.Context, req *mcp.CallToolRequest, args FeedDetailArgs) (*mcp.CallToolResult, any, error) {
+			if args.LoadAllComments && (args.Limit < 0 || args.ReplyLimit < 0) {
+				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "[invalid_argument] limit 与 reply_limit 不能为负数"}}}, nil, nil
+			}
 			argsMap := map[string]interface{}{
 				"feed_id":           args.FeedID,
 				"xsec_token":        args.XsecToken,

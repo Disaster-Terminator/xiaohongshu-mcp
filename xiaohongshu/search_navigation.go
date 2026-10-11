@@ -67,8 +67,9 @@ const searchPageStateJS = `(keyword, phase, before) => {
 	const state = window.__INITIAL_STATE__ || {};
 	const userRef = state.user?.userInfo;
 	const user = userRef?.value ?? userRef?._value ?? userRef;
-	const login = visible(document.querySelector('.login-container'));
+	const login = user?.guest === true || visible(document.querySelector('.login-container'));
 	if (phase === 'home') {
+        if (login) return 'login_required';
 		const hydrated = user && (user.userId || user.user_id || user.guest === true);
 		// The new homepage retains hidden classic search controls. Use site
 		// data and the resulting query transition, not framework internals.
@@ -134,6 +135,8 @@ func waitSearchPageWithControls(page *rod.Page, keyword, phase, before string, t
 				return nil
 			}
 			lastState = "controls_not_bound"
+		case "login_required":
+			return fmt.Errorf("[login_required] 小红书页面要求登录")
 		case "security_verification":
 			return fmt.Errorf("[security_verification] 小红书页面要求安全验证；本次搜索已停止，未自动重试")
 		}
