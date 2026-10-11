@@ -190,7 +190,13 @@ func (u *UserProfileAction) selectTab(ctx context.Context, page *rod.Page, tab P
 		return nil
 	}
 	label := tabLabel[tab]
-	elems, err := page.Timeout(3 * time.Second).Elements(`.reds-tab-item.sub-tab-list`)
+	// Server-rendered profile data can arrive before client-rendered tabs.
+	// Give tab rendering its own bounded budget instead of treating raw data
+	// readiness as proof that interactive controls are already present.
+	if err := page.Timeout(15 * time.Second).Wait(rod.Eval(`() => Array.from(document.querySelectorAll('.reds-tab-item.sub-tab-list')).some(el => el.getClientRects().length > 0)`)); err != nil {
+		return fmt.Errorf("[profile_tab_unavailable] 主页页签未在限定时间内渲染: %w", err)
+	}
+	elems, err := page.Elements(`.reds-tab-item.sub-tab-list`)
 	if err != nil {
 		return fmt.Errorf("未找到主页子 tab: %w", err)
 	}
@@ -208,7 +214,7 @@ func (u *UserProfileAction) selectTab(ctx context.Context, page *rod.Page, tab P
 		humanize.Delay(ctx, humanize.AfterClick)
 		if err := page.Timeout(15 * time.Second).Wait(rod.Eval(`(tab) => {
 			const a = window.__INITIAL_STATE__?.user?.activeTab;
-			const value = a && (a.value !== undefined ? a.value : a._value);
+			const value = a?.value ?? a?._value ?? a;
 			return value && value.query === tab;
 		}`, string(tab))); err != nil {
 			return fmt.Errorf("[profile_tab_unavailable] 子 tab 未在限定时间内切换: %w", err)

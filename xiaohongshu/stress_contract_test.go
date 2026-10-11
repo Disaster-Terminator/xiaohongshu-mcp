@@ -115,7 +115,7 @@ func TestStressContractsProfileFailureIsBoundedAndClassified(t *testing.T) {
 	started := time.Now()
 	require.ErrorContains(t, waitProfileDataWithin(page, 150*time.Millisecond), "[profile_not_ready]")
 	require.Less(t, time.Since(started), time.Second)
-	page.MustEval(`()=>{document.body.innerHTML='<div class="reds-tab-item sub-tab-list" style="display:none">点赞</div>';window.__INITIAL_STATE__={user:{activeTab:{_value:{query:'note',index:0}}}}}`)
+	page.MustEval(`()=>{document.body.innerHTML='<div class="reds-tab-item sub-tab-list">笔记</div><div class="reds-tab-item sub-tab-list" style="display:none">点赞</div>';window.__INITIAL_STATE__={user:{activeTab:{_value:{query:'note',index:0}}}}}`)
 	require.ErrorContains(t, NewUserProfileAction(page).selectTab(context.Background(), page, TabLiked), "[profile_tab_unavailable]")
 }
 
@@ -132,4 +132,14 @@ func TestStressContractsProfileAcceptsRawAndHydratedState(t *testing.T) {
 			require.Equal(t, "fixture-note", profile.Feeds[0].ID)
 		})
 	}
+}
+
+func TestStressContractsProfileWaitsForDelayedTabControls(t *testing.T) {
+	b := searchFixtureBrowser(t)
+	page := b.MustPage()
+	defer page.Close()
+	page.MustEval(`()=>{document.body.innerHTML='';window.__INITIAL_STATE__={user:{activeTab:{query:'note',index:0}}};setTimeout(()=>{const el=document.createElement('div');el.className='reds-tab-item sub-tab-list';el.textContent='收藏';el.onclick=()=>{window.__INITIAL_STATE__.user.activeTab={query:'fav',index:1}};document.body.appendChild(el)},3500)}`)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	require.NoError(t, NewUserProfileAction(page).selectTab(ctx, page.Context(ctx), TabFavorites))
 }
