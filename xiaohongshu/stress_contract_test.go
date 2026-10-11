@@ -118,3 +118,18 @@ func TestStressContractsProfileFailureIsBoundedAndClassified(t *testing.T) {
 	page.MustEval(`()=>{document.body.innerHTML='<div class="reds-tab-item sub-tab-list" style="display:none">点赞</div>';window.__INITIAL_STATE__={user:{activeTab:{_value:{query:'note',index:0}}}}}`)
 	require.ErrorContains(t, NewUserProfileAction(page).selectTab(context.Background(), page, TabLiked), "[profile_tab_unavailable]")
 }
+
+func TestStressContractsProfileAcceptsRawAndHydratedState(t *testing.T) {
+	b := searchFixtureBrowser(t)
+	page := b.MustPage()
+	defer page.Close()
+	for _, wrapper := range []string{"raw", "value", "_value"} {
+		t.Run(wrapper, func(t *testing.T) {
+			page.MustEval(`(wrapper)=>{const wrap=v=>wrapper==='raw'?v:{[wrapper]:v};window.__INITIAL_STATE__={user:{userPageData:wrap({basicInfo:{nickname:'fixture'},interactions:[]}),notes:wrap([[{id:'fixture-note'}]]),activeTab:wrap({query:'note',index:0})}}}`, wrapper)
+			profile, err := NewUserProfileAction(page).extractUserProfileData(page, TabNotes)
+			require.NoError(t, err)
+			require.Len(t, profile.Feeds, 1)
+			require.Equal(t, "fixture-note", profile.Feeds[0].ID)
+		})
+	}
+}

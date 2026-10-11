@@ -77,7 +77,7 @@ func (u *UserProfileAction) extractUserProfileData(page *rod.Page, tab ProfileTa
 		    window.__INITIAL_STATE__.user &&
 		    window.__INITIAL_STATE__.user.userPageData) {
 			const userPageData = window.__INITIAL_STATE__.user.userPageData;
-			const data = userPageData.value !== undefined ? userPageData.value : userPageData._value;
+			const data = userPageData.value ?? userPageData._value ?? userPageData;
 			if (data) {
 				return JSON.stringify(data);
 			}
@@ -93,7 +93,7 @@ func (u *UserProfileAction) extractUserProfileData(page *rod.Page, tab ProfileTa
 	notesResult := page.MustEval(`() => {
 		const u = window.__INITIAL_STATE__ && window.__INITIAL_STATE__.user;
 		if (!u || !u.notes) return "";
-		const unwrap = (o) => (o && o.value !== undefined) ? o.value : (o && o._value);
+		const unwrap = (o) => o?.value ?? o?._value ?? o;
 		const notes = unwrap(u.notes);
 		if (!notes) return "";
 		const active = unwrap(u.activeTab) || {};
